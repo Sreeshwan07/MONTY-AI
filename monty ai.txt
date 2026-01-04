@@ -1,0 +1,251 @@
+"""
+🚀 MONTY - Voice-Only AI Assistant
+Voice Commands Only | No Keyboard Fallback
+Version: 3.1 | Pure Voice Assistant
+"""
+
+# =====================
+# IMPORTS
+# =====================
+import pyttsx3
+import speech_recognition as sr
+import datetime
+import wikipedia
+import webbrowser
+import pywhatkit
+import os
+import time
+import requests
+import random
+import psutil
+import pyautogui
+import urllib.parse
+import re
+import threading
+from datetime import datetime as dt
+
+# =====================
+# TEXT TO SPEECH
+# =====================
+def speak(text):
+    """Fast text-to-speech"""
+    print(f"🤖 MONTY: {text}")
+    try:
+        engine = pyttsx3.init("sapi5")
+        engine.setProperty('rate', 200)
+        engine.setProperty('volume', 1.0)
+        engine.say(text)
+        engine.runAndWait()
+        engine.stop()
+    except:
+        print(f"📢 {text}")
+
+# =====================
+# VOICE-ONLY SPEECH RECOGNITION
+# =====================
+def voice_listen():
+    """Listen for voice commands ONLY - no keyboard fallback"""
+    while True:
+        try:
+            r = sr.Recognizer()
+            with sr.Microphone() as source:
+                print("🎤 Listening... (Say 'MONTY' then your command)")
+                r.adjust_for_ambient_noise(source, duration=0.5)
+                audio = r.listen(source, timeout=10, phrase_time_limit=10)
+                text = r.recognize_google(audio, language="en-in").lower()
+                print(f"👤 You said: {text}")
+                return text
+        except sr.WaitTimeoutError:
+            print("⏰ Listening timeout. I'll keep listening...")
+            continue
+        except sr.UnknownValueError:
+            print("❓ Could not understand audio. Please speak clearly.")
+            speak("I couldn't understand that. Please speak clearly.")
+            continue
+        except Exception as e:
+            print(f"🎤 Error: {e}")
+            speak("There was a microphone issue. Let me try again.")
+            continue
+
+# =====================
+# GOOGLE-STYLE QUESTION ANALYZER
+# =====================
+class GoogleStyleQuestionAnalyzer:
+    def __init__(self):
+        self.question_patterns = {
+            "factual": [
+                r'^who (is|was|are|were)',
+                r'^what (is|are|was|were|does|do|did)',
+                r'^when (is|was|are|were|does|do|did)',
+                r'^where (is|are|was|were|does|do|did)',
+                r'^why (is|are|was|were|does|do|did)',
+                r'^how (is|are|was|were|does|do|did|can|could|to)',
+            ],
+            "instructional": [
+                r'how to ',
+                r'steps to ',
+                r'tutorial for ',
+            ],
+            "mathematical": [
+                r'calculate ',
+                r'what is \d+',
+                r'\d+ [\+\-\*/] \d+',
+            ],
+            "definition": [
+                r'meaning of ',
+                r'define ',
+                r'definition of ',
+            ],
+            "location": [
+                r'location of ',
+                r'where is ',
+                r'where can i find',
+            ],
+            "time": [
+                r'what time',
+                r'current time',
+                r'what date',
+                r'current date',
+            ],
+            "weather": [
+                r'weather in',
+                r'temperature in',
+                r'forecast for',
+            ],
+            "entertainment": [
+                r'play ',
+                r'song by',
+                r'movie ',
+            ],
+            "technology": [
+                r'python ',
+                r'programming ',
+                r'coding ',
+            ],
+        }
+
+    def analyze_question(self, question):
+        if not question:
+            return "general", ""
+
+        question_lower = question.lower().strip()
+
+        for category, patterns in self.question_patterns.items():
+            for pattern in patterns:
+                if re.search(pattern, question_lower):
+                    return category, question_lower
+
+        if '?' in question_lower:
+            return "general", question_lower
+
+        if any(cmd in question_lower for cmd in ['open ', 'play ', 'search ', 'check ', 'tell ']):
+            return "command", question_lower
+
+        return "general", question_lower
+
+# =====================
+# UNIVERSAL ANSWER ENGINE
+# =====================
+class UniversalAnswerEngine:
+    def __init__(self):
+        self.analyzer = GoogleStyleQuestionAnalyzer()
+
+    def get_answer(self, question):
+        category, clean_question = self.analyzer.analyze_question(question)
+        print(f"🔍 Question Type: {category.upper()}")
+
+        if category == "time":
+            if "time" in clean_question:
+                return dt.now().strftime("🕐 The current time is %I:%M %p")
+            elif "date" in clean_question:
+                return dt.now().strftime("📅 Today's date is %A, %B %d, %Y")
+
+        if category in ["factual", "definition"]:
+            try:
+                term = self._extract_search_term(clean_question)
+                summary = wikipedia.summary(term, sentences=2)
+                return f"📚 According to Wikipedia: {summary}"
+            except:
+                pass
+
+        if category == "weather":
+            location = clean_question.replace("weather in", "").strip()
+            webbrowser.open(f"https://www.google.com/search?q=weather+in+{urllib.parse.quote(location)}")
+            return f"🌤️ Showing weather for {location}"
+
+        if category == "mathematical":
+            try:
+                expr = clean_question.replace("calculate", "").strip()
+                return f"🧮 Result is {eval(expr)}"
+            except:
+                pass
+
+        return self._get_duckduckgo_answer(clean_question)
+
+    def _extract_search_term(self, question):
+        stop_words = ["what", "is", "are", "the", "how", "does", "do", "who", "when", "where", "why"]
+        return " ".join([w for w in question.split() if w not in stop_words])
+
+    def _get_duckduckgo_answer(self, question):
+        try:
+            url = f"https://api.duckduckgo.com/?q={urllib.parse.quote(question)}&format=json"
+            data = requests.get(url).json()
+            if data.get("Abstract"):
+                return data["Abstract"]
+        except:
+            pass
+        webbrowser.open(f"https://www.google.com/search?q={urllib.parse.quote(question)}")
+        return "I’ve opened Google search for you."
+
+answer_engine = UniversalAnswerEngine()
+
+# =====================
+# VOICE COMMAND PROCESSOR
+# =====================
+def process_voice_command(command):
+    command = command.lower()
+
+    if "monty" not in command and "mon" not in command:
+        speak("Please say Monty before your command.")
+        return
+
+    command = command.replace("monty", "").replace("mon", "").strip()
+
+    if "open youtube" in command:
+        webbrowser.open("https://youtube.com")
+        speak("Opening YouTube")
+        return
+
+    if "joke" in command:
+        speak(random.choice([
+            "Why do programmers prefer dark mode? Because light attracts bugs.",
+            "I told my computer I needed a break. It froze."
+        ]))
+        return
+
+    if "exit" in command or "bye" in command:
+        speak("Goodbye! Have a great day.")
+        exit()
+
+    answer = answer_engine.get_answer(command)
+    speak(answer)
+
+# =====================
+# MAIN VOICE ASSISTANT
+# =====================
+def voice_only_assistant():
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+    print("🎤 MONTY - VOICE ONLY AI ASSISTANT")
+    speak("Hello! I'm Monty. Say Monty followed by your command.")
+
+    while True:
+        cmd = voice_listen()
+        if cmd:
+            process_voice_command(cmd)
+
+# =====================
+# START
+# =====================
+if __name__ == "__main__":
+    voice_only_assistant()
